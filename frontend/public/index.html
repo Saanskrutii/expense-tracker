@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Expense Tracker</title>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:700,400|Montserrat:700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(135deg, #43cea2 0%, #185a9d 100%);
+      font-family: 'Roboto', sans-serif;
+      margin: 0; padding: 0;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: flex-start;
+    }
+    #root {
+      width: 100%;
+      max-width: 400px;
+      margin-top: 48px;
+      padding: 32px;
+      background: rgba(255,255,255,0.95);
+      border-radius: 18px;
+      box-shadow: 0 8px 24px rgba(44,62,80,0.10);
+    }
+    h1 {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 2.4rem;
+      margin-bottom: 24px;
+      color: #24426a;
+      letter-spacing: 1px;
+      text-align: center;
+      text-shadow: 2px 4px 8px rgba(44,62,80,0.06);
+    }
+    p {
+      font-size: 1.2rem;
+      text-align: center;
+      color: #185a9d;
+    }
+    .footer {
+      margin-top: auto;
+      padding: 28px 0;
+      text-align: center;
+      color: #ffffffc5;
+      font-size: 0.95rem;
+      letter-spacing: 0.9px;
+    }
+    @media (max-width:500px){
+      #root { padding: 20px; }
+      h1 { font-size:1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div class="footer">
+    Made by Priyanka, Sanskruti, Taha | Expense Tracker
+  </div>
+</body>
+</html>

@@ -1,0 +1,24 @@
+name: Node CI
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dir: [backend, frontend]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: cd ${{ matrix.dir }} && npm ci
+
+      - name: Lint
+        run: cd ${{ matrix.dir }} && npm run lint
+
+      - name: Test
+        run: cd ${{ matrix.dir }} && npm test -- --coverage
