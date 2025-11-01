@@ -5,53 +5,69 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/expense-backend:latest
+  FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/expense-frontend:latest
+
 jobs:
   build-and-push:
-    name: Build & push Docker images
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU (multi-arch, optional)
+        uses: docker/setup-qemu-action@v2
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v2
 
       - name: Login to DockerHub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & push backend
-        uses: docker/build-push-action@v5
+      - name: Build & push backend image
+        uses: docker/build-push-action@v4
         with:
           context: ./backend
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-backend:latest
+          tags: ${{ env.BACKEND_IMAGE }}
 
-      - name: Build & push frontend
-        uses: docker/build-push-action@v5
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v4
         with:
           context: ./frontend
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-frontend:latest
+          tags: ${{ env.FRONTEND_IMAGE }}
 
-  deploy-to-ec2:
-    name: Deploy to EC2 (pull & restart)
-    runs-on: ubuntu-latest
+  deploy:
     needs: build-and-push
+    runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Wait a few seconds
+        run: sleep 2
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            cd ~/expense-deploy
-            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-backend:latest
-            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-frontend:latest
-            sudo docker compose down || true
-            sudo docker compose up -d --remove-orphans
+            set -e
+            cd ~/expense-deploy || mkdir -p ~/expense-deploy && cd ~/expense-deploy
+            # stop old
+            sudo docker stop expense-backend || true
+            sudo docker rm expense-backend || true
+            sudo docker stop expense-frontend || true
+            sudo docker rm expense-frontend || true
+            # pull new
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/expense-backend:latest
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/expense-frontend:latest
+            # run containers (adjust env if needed)
+            sudo docker run -d --name expense-backend -p 3000:3000 -e NODE_ENV=production ${{ secrets.DOCKERHUB_USERNAME }}/expense-backend:latest
+            sudo docker run -d --name expense-frontend -p 80:80 ${{ secrets.DOCKERHUB_USERNAME }}/expense-frontend:latest
+            sudo docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
