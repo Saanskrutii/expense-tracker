@@ -1,7 +1,12 @@
+# .dockerignore
 node_modules
-build
-.git
-.gitignore
-.DS_Store
-.env
+frontend/node_modules
+backend/node_modules
 npm-debug.log
+.env
+dist
+build
+.cache
+.DS_Store
+.vscode
+coverage
