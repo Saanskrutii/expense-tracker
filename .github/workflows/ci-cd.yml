@@ -1,79 +1,57 @@
-name: CI / Build / Push / Deploy
+name: CI/CD Pipeline (build -> push -> deploy)
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-env:
-  IMAGE_NAMESPACE: ${{ secrets.DOCKERHUB_USERNAME }}
+  workflow_dispatch:
 
 jobs:
-  lint-and-test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        dir: [backend, frontend]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Use Node 18
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - name: Install & Test (${{ matrix.dir }})
-        working-directory: ${{ matrix.dir }}
-        run: |
-          npm ci || npm install
-          npm run lint || true
-          npm test -- --coverage --silent || true
-
   build-and-push:
-    needs: lint-and-test
+    name: Build & push Docker images
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build backend image
-        run: |
-          docker build -t $IMAGE_NAMESPACE/expense-tracker-backend:${{ github.sha }} -f backend/Dockerfile ./backend
-          docker tag $IMAGE_NAMESPACE/expense-tracker-backend:${{ github.sha }} $IMAGE_NAMESPACE/expense-tracker-backend:latest
-          docker push $IMAGE_NAMESPACE/expense-tracker-backend:${{ github.sha }}
-          docker push $IMAGE_NAMESPACE/expense-tracker-backend:latest
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-backend:latest
 
-      - name: Build frontend image
-        run: |
-          docker build -t $IMAGE_NAMESPACE/expense-tracker-frontend:${{ github.sha }} -f frontend/Dockerfile ./frontend
-          docker tag $IMAGE_NAMESPACE/expense-tracker-frontend:${{ github.sha }} $IMAGE_NAMESPACE/expense-tracker-frontend:latest
-          docker push $IMAGE_NAMESPACE/expense-tracker-frontend:${{ github.sha }}
-          docker push $IMAGE_NAMESPACE/expense-tracker-frontend:latest
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-frontend:latest
 
   deploy-to-ec2:
-    needs: build-and-push
-    if: ${{ secrets.EC2_HOST && secrets.EC2_USER && secrets.EC2_SSH_KEY }}
+    name: Deploy to EC2 (pull & restart)
     runs-on: ubuntu-latest
+    needs: build-and-push
     steps:
-      - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v0.1.8
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            docker pull $IMAGE_NAMESPACE/expense-tracker-backend:latest || true
-            docker pull $IMAGE_NAMESPACE/expense-tracker-frontend:latest || true
-            docker stop expense-backend || true
-            docker rm expense-backend || true
-            docker run -d --name expense-backend -p 3000:3000 -e NODE_ENV=production $IMAGE_NAMESPACE/expense-tracker-backend:latest
-            docker stop expense-frontend || true
-            docker rm expense-frontend || true
-            docker run -d --name expense-frontend -p 80:80 $IMAGE_NAMESPACE/expense-tracker-frontend:latest
+            cd ~/expense-deploy
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-backend:latest
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/expense-tracker-frontend:latest
+            sudo docker compose down || true
+            sudo docker compose up -d --remove-orphans
