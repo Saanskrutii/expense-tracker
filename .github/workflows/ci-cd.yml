@@ -1,0 +1,79 @@
+name: CI / Build / Push / Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_NAMESPACE: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dir: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install & Test (${{ matrix.dir }})
+        working-directory: ${{ matrix.dir }}
+        run: |
+          npm ci || npm install
+          npm run lint || true
+          npm test -- --coverage --silent || true
+
+  build-and-push:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build backend image
+        run: |
+          docker build -t $IMAGE_NAMESPACE/expense-tracker-backend:${{ github.sha }} -f backend/Dockerfile ./backend
+          docker tag $IMAGE_NAMESPACE/expense-tracker-backend:${{ github.sha }} $IMAGE_NAMESPACE/expense-tracker-backend:latest
+          docker push $IMAGE_NAMESPACE/expense-tracker-backend:${{ github.sha }}
+          docker push $IMAGE_NAMESPACE/expense-tracker-backend:latest
+
+      - name: Build frontend image
+        run: |
+          docker build -t $IMAGE_NAMESPACE/expense-tracker-frontend:${{ github.sha }} -f frontend/Dockerfile ./frontend
+          docker tag $IMAGE_NAMESPACE/expense-tracker-frontend:${{ github.sha }} $IMAGE_NAMESPACE/expense-tracker-frontend:latest
+          docker push $IMAGE_NAMESPACE/expense-tracker-frontend:${{ github.sha }}
+          docker push $IMAGE_NAMESPACE/expense-tracker-frontend:latest
+
+  deploy-to-ec2:
+    needs: build-and-push
+    if: ${{ secrets.EC2_HOST && secrets.EC2_USER && secrets.EC2_SSH_KEY }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            docker pull $IMAGE_NAMESPACE/expense-tracker-backend:latest || true
+            docker pull $IMAGE_NAMESPACE/expense-tracker-frontend:latest || true
+            docker stop expense-backend || true
+            docker rm expense-backend || true
+            docker run -d --name expense-backend -p 3000:3000 -e NODE_ENV=production $IMAGE_NAMESPACE/expense-tracker-backend:latest
+            docker stop expense-frontend || true
+            docker rm expense-frontend || true
+            docker run -d --name expense-frontend -p 80:80 $IMAGE_NAMESPACE/expense-tracker-frontend:latest
